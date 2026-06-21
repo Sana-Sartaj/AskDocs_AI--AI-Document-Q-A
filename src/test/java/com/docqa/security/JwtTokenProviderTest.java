@@ -8,13 +8,17 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class JwtTokenProviderTest {
 
-    // base64("secretkeyfortestingpurposesdonotuse") = 34 bytes = 272 bits, valid for HMAC-SHA256
-    private static final String VALID_SECRET = "c2VjcmV0a2V5Zm9ydGVzdGluZ3B1cnBvc2VzZG9ub3R1c2U=";
+    // Secret is defined in .env as TEST_JWT_SECRET.
+    // Before running tests: export $(grep -v '^#' .env | xargs)
+    private static final String VALID_SECRET = Objects.requireNonNull(
+            System.getenv("TEST_JWT_SECRET"),
+            "TEST_JWT_SECRET environment variable is not set — export it from .env before running tests");
     private static final long EXPIRATION_MS = 3_600_000L; // 1 hour
 
     private JwtTokenProvider provider;

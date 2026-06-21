@@ -12,7 +12,7 @@ import org.springframework.test.context.TestPropertySource;
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.jpa.hibernate.ddl-auto=none",
         "spring.flyway.enabled=false",
-        "app.jwt.secret=dGVzdFNlY3JldEtleVRoYXRJc0F0TGVhc3QyNTZCaXRzTG9uZw==",
+        "app.jwt.secret=${TEST_JWT_SECRET}",
         "langchain4j.open-ai.api-key=test",
         "app.aws.region=us-east-1",
         "app.aws.s3-bucket=test-bucket"
