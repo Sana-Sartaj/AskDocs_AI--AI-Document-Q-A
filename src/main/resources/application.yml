@@ -1,0 +1,140 @@
+spring:
+  application:
+    name: ai-document-qa
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/docqa}
+    username: ${SPRING_DATASOURCE_USERNAME:docqa}
+    password: ${SPRING_DATASOURCE_PASSWORD:docqa_secret}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 20000
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      # Set HNSW and IVFFlat search parameters once per connection so every
+      # query on that connection benefits without a per-query SET round-trip.
+      connection-init-sql: "SET hnsw.ef_search = 100; SET ivfflat.probes = 10"
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+    validate-on-migrate: true
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 55MB
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+langchain4j:
+  open-ai:
+    api-key: ${OPENAI_API_KEY:}
+    chat-model:
+      model-name: ${OPENAI_CHAT_MODEL:gpt-4o}
+      temperature: 0.2
+      max-tokens: 2048
+    embedding-model:
+      model-name: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:dev_secret_change_in_production_must_be_at_least_256_bits_long}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  aws:
+    region: ${AWS_REGION:us-east-1}
+    s3-bucket: ${S3_BUCKET_NAME:docqa-documents}
+    presigned-url-ttl: ${PRESIGNED_URL_TTL:PT1H}
+    max-file-size-mb: ${MAX_FILE_SIZE_MB:50}
+    endpoint-url: ${APP_AWS_ENDPOINT_URL:}
+    path-style-access: ${APP_AWS_PATH_STYLE_ACCESS:false}
+  vector:
+    embedding-dimension: 1536
+    similarity-top-k: ${SIMILARITY_TOP_K:5}
+    ef-search: ${HNSW_EF_SEARCH:100}
+    probes: ${IVFFLAT_PROBES:10}
+  document:
+    chunk-size: 1000
+    chunk-overlap: 200
+  rag:
+    max-context-chars: ${RAG_MAX_CONTEXT_CHARS:8000}
+    session-title-max-length: 80
+    max-history-messages: ${CHAT_MAX_HISTORY_MESSAGES:20}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers,threaddump,env
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: always
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+    build:
+      enabled: true
+    git:
+      enabled: true
+      mode: full
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active:dev}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        docqa.llm.call.duration: true
+        docqa.vector.search.duration: true
+        docqa.pdf.processing.duration: true
+      percentiles:
+        "[http.server.requests]": 0.5,0.9,0.95,0.99
+        "[docqa.llm.call.duration]": 0.5,0.9,0.95,0.99
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLE_RATE:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+
+logging:
+  level:
+    root: INFO
+    com.docqa: DEBUG
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+  pattern:
+    # Embeds traceId + spanId (populated by Micrometer Tracing) into every log line
+    level: "%5p [${spring.application.name:app},%X{traceId:-},%X{spanId:-}]"

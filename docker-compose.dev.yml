@@ -1,0 +1,121 @@
+name: docqa-dev
+
+# Lightweight dev stack: postgres + LocalStack + app with remote debug port.
+# No Prometheus / Grafana / Jaeger — run these separately if needed.
+# Usage: docker compose -f docker-compose.dev.yml up
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: docqa-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-docqa}
+      POSTGRES_USER: ${POSTGRES_USER:-docqa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docqa_secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-docqa} -d ${POSTGRES_DB:-docqa}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - docqa-dev-net
+
+  localstack:
+    image: localstack/localstack:3
+    container_name: docqa-localstack-dev
+    restart: unless-stopped
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      DEBUG: "1"
+    volumes:
+      - localstack_dev_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - docqa-dev-net
+
+  localstack-init:
+    image: amazon/aws-cli:latest
+    container_name: docqa-localstack-init-dev
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - "aws --endpoint-url=http://localstack:4566 s3 mb s3://${S3_BUCKET_NAME:-docqa-documents} 2>/dev/null || true && echo 'Bucket ready: ${S3_BUCKET_NAME:-docqa-documents}'"
+    networks:
+      - docqa-dev-net
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docqa-app-dev
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+      - "5005:5005"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-docqa}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-docqa}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-docqa_secret}
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_in_production_must_be_at_least_256_bits_long}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-docqa-documents}
+      APP_AWS_ENDPOINT_URL: http://localstack:4566
+      APP_AWS_PATH_STYLE_ACCESS: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4317
+      JAVA_TOOL_OPTIONS: >-
+        -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health/liveness || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks:
+      - docqa-dev-net
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  localstack_dev_data:
+    driver: local
+
+networks:
+  docqa-dev-net:
+    driver: bridge
